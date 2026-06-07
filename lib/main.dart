@@ -35,7 +35,7 @@ const _requiredScopes = [
 ];
 
 // ── API 서버 주소
-const _apiBase = 'http://13.209.119.56:8000';
+const _apiBase = 'https://caify.ai/Test_cho/caify-api/proxy.php';
 
 // ── 로컬 폴백 코드 (서버 다운 시)
 const _fallbackCodes = ['CAIFY-TEST'];
@@ -279,7 +279,7 @@ class _WelcomePageState extends State<WelcomePage> {
     try {
       // 서버에서 코드 검증
       final res = await http.post(
-        Uri.parse('$_apiBase/api/codes/verify'),
+        Uri.parse('$_apiBase?p=api/codes/verify'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'code': code}),
       ).timeout(const Duration(seconds: 8));
@@ -992,7 +992,7 @@ class _ProgressPageState extends State<ProgressPage> {
 
       try {
         await http.post(
-          Uri.parse('$_apiBase/api/setup/complete'),
+          Uri.parse('$_apiBase?p=api/setup/complete'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'code': widget.setupData.serviceCode,
