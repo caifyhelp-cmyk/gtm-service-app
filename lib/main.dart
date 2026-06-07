@@ -8,124 +8,237 @@ void main() {
   runApp(const GTMServiceApp());
 }
 
+// ── 컬러 상수
+const kPrimary = Color(0xFF2563EB);
+const kSuccess = Color(0xFF16A34A);
+const kError = Color(0xFFDC2626);
+const kBg = Color(0xFFF8FAFC);
+
+// ── GoogleSignIn 인스턴스
 final _googleSignIn = GoogleSignIn(
   scopes: [
     'email',
     'https://www.googleapis.com/auth/tagmanager.readonly',
     'https://www.googleapis.com/auth/tagmanager.edit.containers',
+    'https://www.googleapis.com/auth/tagmanager.publish',
     'https://www.googleapis.com/auth/analytics.readonly',
     'https://www.googleapis.com/auth/analytics.manage.users',
     'https://www.googleapis.com/auth/analytics.edit',
   ],
 );
 
+// ── 유효 서비스 코드 목록
+const _validCodes = ['CAIFY001', 'CAIFY002', 'CAIFY003', 'CAIFY-TEST'];
+
+// ── 세팅 데이터 모델
+class SetupData {
+  String serviceCode;
+  String websiteUrl;
+  String projectName;
+  String platform;
+
+  SetupData({
+    this.serviceCode = '',
+    this.websiteUrl = '',
+    this.projectName = '',
+    this.platform = '스마트스토어',
+  });
+}
+
+// ── 진행 단계 상태
+enum StepStatus { waiting, running, done, error }
+
+class ProgressStep {
+  final String label;
+  StepStatus status;
+  String? errorMessage;
+
+  ProgressStep(this.label, {this.status = StepStatus.waiting});
+}
+
+// ════════════════════════════════════════════
+// 앱
+// ════════════════════════════════════════════
 class GTMServiceApp extends StatelessWidget {
   const GTMServiceApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'GTM 세팅 테스트',
+      title: 'GTM+GA4 자동 세팅',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
+        colorScheme: ColorScheme.fromSeed(seedColor: kPrimary),
         useMaterial3: true,
-        fontFamily: 'sans-serif',
       ),
-      home: const HomePage(),
+      home: WelcomePage(setupData: SetupData()),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+// ════════════════════════════════════════════
+// 1. WelcomePage
+// ════════════════════════════════════════════
+class WelcomePage extends StatefulWidget {
+  final SetupData setupData;
+  const WelcomePage({super.key, required this.setupData});
+
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<WelcomePage> createState() => _WelcomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  GoogleSignInAccount? _user;
-  String? _token;
-  List<Map<String, dynamic>> _gtmAccounts = [];
-  List<Map<String, dynamic>> _ga4Properties = [];
-  bool _loading = false;
-  String _status = '';
+class _WelcomePageState extends State<WelcomePage> {
+  final _codeCtrl = TextEditingController();
+  String? _errorText;
 
-  Future<void> _signIn() async {
-    setState(() { _loading = true; _status = '구글 로그인 중...'; });
-    try {
-      final account = await _googleSignIn.signIn();
-      if (account == null) {
-        setState(() { _loading = false; _status = '로그인 취소됨'; });
-        return;
-      }
-      final auth = await account.authentication;
-      setState(() {
-        _user = account;
-        _token = auth.accessToken;
-        _status = '로그인 완료 — API 호출 중...';
-      });
-      await _fetchGTMAccounts();
-      await _fetchGA4Properties();
-    } catch (e) {
-      setState(() { _status = '오류: $e'; });
-    } finally {
-      setState(() { _loading = false; });
-    }
-  }
-
-  Future<void> _fetchGTMAccounts() async {
-    if (_token == null) return;
-    setState(() { _status = 'GTM 계정 조회 중...'; });
-    try {
-      final res = await http.get(
-        Uri.parse('https://www.googleapis.com/tagmanager/v2/accounts'),
-        headers: {'Authorization': 'Bearer $_token'},
+  void _confirm() {
+    final code = _codeCtrl.text.trim().toUpperCase();
+    if (_validCodes.contains(code)) {
+      widget.setupData.serviceCode = code;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SetupFormPage(setupData: widget.setupData),
+        ),
       );
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final accounts = (data['account'] as List? ?? []);
-        setState(() { _gtmAccounts = accounts.cast<Map<String, dynamic>>(); });
-      }
-    } catch (e) {
-      setState(() { _status = 'GTM 오류: $e'; });
+    } else {
+      setState(() => _errorText = '유효하지 않은 코드입니다. 다시 확인해주세요.');
     }
   }
 
-  Future<void> _fetchGA4Properties() async {
-    if (_token == null) return;
-    setState(() { _status = 'GA4 속성 조회 중...'; });
-    try {
-      final res = await http.get(
-        Uri.parse('https://analyticsadmin.googleapis.com/v1beta/accounts'),
-        headers: {'Authorization': 'Bearer $_token'},
-      );
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final accounts = (data['accounts'] as List? ?? []);
-        setState(() {
-          _ga4Properties = accounts.cast<Map<String, dynamic>>();
-          _status = '완료 ✓';
-        });
-      }
-    } catch (e) {
-      setState(() { _status = 'GA4 오류: $e'; });
-    }
-  }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 로고/타이틀
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: kPrimary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.settings_suggest,
+                      color: Colors.white, size: 44),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'GTM+GA4 자동 세팅',
+                  style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E293B)),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'GTM 컨테이너와 GA4 속성을\n자동으로 생성·연동해드립니다.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 48),
 
-  Future<void> _signOut() async {
-    await _googleSignIn.signOut();
-    setState(() {
-      _user = null; _token = null;
-      _gtmAccounts = []; _ga4Properties = [];
-      _status = '';
-    });
+                // 코드 입력 카드
+                _AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '서비스 코드 입력',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '결제 후 받으신 코드를 입력해주세요.',
+                        style: TextStyle(
+                            fontSize: 13, color: Color(0xFF64748B)),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _codeCtrl,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: InputDecoration(
+                          hintText: 'CAIFY001',
+                          errorText: _errorText,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide:
+                                const BorderSide(color: kPrimary, width: 2),
+                          ),
+                          prefixIcon:
+                              const Icon(Icons.vpn_key_outlined),
+                        ),
+                        onSubmitted: (_) => _confirm(),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _confirm,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kPrimary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Text('확인',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
+}
 
-  void _copyToken() {
-    if (_token != null) {
-      Clipboard.setData(ClipboardData(text: _token!));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('토큰 복사됨')),
+// ════════════════════════════════════════════
+// 2. SetupFormPage
+// ════════════════════════════════════════════
+class SetupFormPage extends StatefulWidget {
+  final SetupData setupData;
+  const SetupFormPage({super.key, required this.setupData});
+
+  @override
+  State<SetupFormPage> createState() => _SetupFormPageState();
+}
+
+class _SetupFormPageState extends State<SetupFormPage> {
+  final _urlCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  String _platform = '스마트스토어';
+
+  final _platforms = ['스마트스토어', '쇼핑몰', '블로그', '기타'];
+
+  void _next() {
+    if (_formKey.currentState!.validate()) {
+      widget.setupData.websiteUrl = _urlCtrl.text.trim();
+      widget.setupData.projectName = _nameCtrl.text.trim();
+      widget.setupData.platform = _platform;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LoginPage(setupData: widget.setupData),
+        ),
       );
     }
   }
@@ -133,149 +246,609 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2563EB),
-        title: const Text('GTM 서비스 기능 테스트',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        actions: [
-          if (_user != null)
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.white),
-              onPressed: _signOut,
-            ),
-        ],
-      ),
+      backgroundColor: kBg,
+      appBar: _AppBar(title: '세팅 정보 입력', step: '2/5'),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── 상태 카드
-            if (_status.isNotEmpty)
-              _Card(
-                color: _status.contains('오류')
-                    ? const Color(0xFFFEE2E2)
-                    : _status.contains('완료')
-                        ? const Color(0xFFDCFCE7)
-                        : const Color(0xFFEFF6FF),
-                child: Row(children: [
-                  if (_loading) ...[
-                    const SizedBox(width: 18, height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(child: Text(_status,
-                      style: const TextStyle(fontWeight: FontWeight.w500))),
-                ]),
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _StepHeader(
+                icon: Icons.edit_note,
+                title: '기본 정보를 입력해주세요',
+                subtitle: 'GTM 컨테이너와 GA4 속성 생성에 사용됩니다.',
               ),
+              const SizedBox(height: 24),
 
-            if (_status.isNotEmpty) const SizedBox(height: 16),
-
-            // ── 로그인 전
-            if (_user == null) ...[
-              _Card(
+              _AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('테스트 항목',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                    const SizedBox(height: 12),
-                    _CheckItem('Google OAuth 로그인'),
-                    _CheckItem('GTM 계정 목록 조회'),
-                    _CheckItem('GA4 속성 목록 조회'),
-                    _CheckItem('API 권한 확인'),
+                    // 웹사이트 URL
+                    _FieldLabel('웹사이트 URL', required: true),
+                    TextFormField(
+                      controller: _urlCtrl,
+                      keyboardType: TextInputType.url,
+                      decoration: _inputDeco(
+                          hint: 'https://example.com',
+                          icon: Icons.language),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return '웹사이트 URL을 입력해주세요.';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    // 프로젝트명
+                    _FieldLabel('프로젝트/사업체 이름', required: true),
+                    TextFormField(
+                      controller: _nameCtrl,
+                      decoration: _inputDeco(
+                          hint: '내 쇼핑몰', icon: Icons.business),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return '프로젝트 이름을 입력해주세요.';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    // 플랫폼 선택
+                    _FieldLabel('플랫폼', required: true),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _platforms.map((p) {
+                        final selected = _platform == p;
+                        return ChoiceChip(
+                          label: Text(p),
+                          selected: selected,
+                          selectedColor: kPrimary.withOpacity(0.15),
+                          labelStyle: TextStyle(
+                            color: selected ? kPrimary : const Color(0xFF475569),
+                            fontWeight: selected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                          onSelected: (_) =>
+                              setState(() => _platform = p),
+                        );
+                      }).toList(),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
+
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _next,
+                  icon: const Icon(Icons.arrow_forward),
+                  label: const Text('다음: Google 로그인',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kPrimary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════
+// 3. LoginPage
+// ════════════════════════════════════════════
+class LoginPage extends StatefulWidget {
+  final SetupData setupData;
+  const LoginPage({super.key, required this.setupData});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _signIn() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final account = await _googleSignIn.signIn();
+      if (account == null) {
+        setState(() {
+          _loading = false;
+          _error = '로그인이 취소되었습니다.';
+        });
+        return;
+      }
+      final auth = await account.authentication;
+      final token = auth.accessToken;
+      if (token == null) {
+        setState(() {
+          _loading = false;
+          _error = '액세스 토큰을 가져올 수 없습니다.';
+        });
+        return;
+      }
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProgressPage(
+            setupData: widget.setupData,
+            token: token,
+          ),
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = '로그인 오류: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: _AppBar(title: 'Google 로그인', step: '3/5'),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            _StepHeader(
+              icon: Icons.login,
+              title: 'Google 계정으로 로그인',
+              subtitle:
+                  '아래 버튼으로 Google 계정에 로그인하면, GTM 컨테이너와 GA4 속성이 자동으로 생성됩니다.',
+            ),
+            const SizedBox(height: 24),
+
+            // 권한 안내 카드
+            _AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '요청할 권한 안내',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  const SizedBox(height: 12),
+                  _PermItem(
+                    icon: Icons.local_offer,
+                    color: kPrimary,
+                    title: 'GTM 편집 권한',
+                    desc: '컨테이너 생성, 태그/트리거 설정, 게시',
+                  ),
+                  const SizedBox(height: 8),
+                  _PermItem(
+                    icon: Icons.bar_chart,
+                    color: kSuccess,
+                    title: 'GA4 편집 권한',
+                    desc: '속성 생성, 데이터 스트림 설정',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // 세팅 요약 카드
+            _AppCard(
+              color: const Color(0xFFEFF6FF),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('입력한 정보 확인',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: kPrimary,
+                          fontSize: 14)),
+                  const SizedBox(height: 10),
+                  _InfoRow('URL', widget.setupData.websiteUrl),
+                  _InfoRow('프로젝트명', widget.setupData.projectName),
+                  _InfoRow('플랫폼', widget.setupData.platform),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            if (_error != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEE2E2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(_error!,
+                    style: const TextStyle(color: kError, fontSize: 13)),
+              ),
+
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
                 onPressed: _loading ? null : _signIn,
-                icon: const Icon(Icons.login),
-                label: const Text('Google 로그인으로 테스트 시작',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                icon: _loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white))
+                    : const Icon(Icons.login),
+                label: Text(
+                  _loading ? '로그인 중...' : 'Google로 로그인 후 자동 세팅 시작',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: kPrimary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-            // ── 로그인 후
-            if (_user != null) ...[
-              // 사용자 정보
-              _Card(
-                child: Row(children: [
-                  CircleAvatar(
-                    backgroundImage: _user!.photoUrl != null
-                        ? NetworkImage(_user!.photoUrl!) : null,
-                    backgroundColor: const Color(0xFF2563EB),
-                    child: _user!.photoUrl == null
-                        ? const Icon(Icons.person, color: Colors.white) : null,
+// ════════════════════════════════════════════
+// 4. ProgressPage
+// ════════════════════════════════════════════
+class ProgressPage extends StatefulWidget {
+  final SetupData setupData;
+  final String token;
+
+  const ProgressPage({
+    super.key,
+    required this.setupData,
+    required this.token,
+  });
+
+  @override
+  State<ProgressPage> createState() => _ProgressPageState();
+}
+
+class _ProgressPageState extends State<ProgressPage> {
+  late List<ProgressStep> _steps;
+
+  // 수집된 결과값
+  String? _gtmAccountId;
+  String? _gtmContainerId;
+  String? _gtmPublicId;
+  String? _ga4PropertyId;
+  String? _measurementId;
+  String? _workspaceId;
+  String? _gtmVersionId;
+
+  bool _finished = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _steps = [
+      ProgressStep('Google 인증 완료'),
+      ProgressStep('GTM 계정 확인'),
+      ProgressStep('GTM 컨테이너 생성'),
+      ProgressStep('GA4 속성 생성'),
+      ProgressStep('GA4 웹 데이터 스트림 생성'),
+      ProgressStep('GTM-GA4 연동 태그 생성'),
+      ProgressStep('GTM 게시(Publish)'),
+      ProgressStep('완료'),
+    ];
+    // 화면이 그려진 후 자동 실행
+    WidgetsBinding.instance.addPostFrameCallback((_) => _runAll());
+  }
+
+  void _setStep(int i, StepStatus s, {String? err}) {
+    setState(() {
+      _steps[i].status = s;
+      _steps[i].errorMessage = err;
+    });
+  }
+
+  Future<Map<String, dynamic>> _apiGet(String url) async {
+    final res = await http.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer ${widget.token}',
+        'Content-Type': 'application/json',
+      },
+    );
+    if (res.statusCode != 200) {
+      throw Exception('GET $url → ${res.statusCode}\n${res.body}');
+    }
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> _apiPost(
+      String url, Map<String, dynamic> body) async {
+    final res = await http.post(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer ${widget.token}',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception('POST $url → ${res.statusCode}\n${res.body}');
+    }
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  Future<void> _runAll() async {
+    try {
+      // ── 단계 1: Google 인증 완료 (이미 토큰 있음)
+      _setStep(0, StepStatus.running);
+      await Future.delayed(const Duration(milliseconds: 500));
+      _setStep(0, StepStatus.done);
+
+      // ── 단계 2: GTM 계정 확인
+      _setStep(1, StepStatus.running);
+      final gtmAccountsData = await _apiGet(
+          'https://www.googleapis.com/tagmanager/v2/accounts');
+      final accounts =
+          (gtmAccountsData['account'] as List? ?? []);
+      if (accounts.isEmpty) {
+        _setStep(1, StepStatus.error,
+            err: 'GTM 계정이 없습니다. tagmanager.google.com 에서 계정을 먼저 생성해주세요.');
+        setState(() => _hasError = true);
+        return;
+      }
+      _gtmAccountId = accounts[0]['accountId']?.toString() ??
+          (accounts[0]['name'] as String?)?.split('/').last;
+      _setStep(1, StepStatus.done);
+
+      // ── 단계 3: GTM 컨테이너 생성
+      _setStep(2, StepStatus.running);
+      final containerName =
+          '${widget.setupData.projectName} - ${widget.setupData.platform}';
+      final containerData = await _apiPost(
+        'https://www.googleapis.com/tagmanager/v2/accounts/$_gtmAccountId/containers',
+        {
+          'name': containerName,
+          'usageContext': ['web'],
+        },
+      );
+      _gtmContainerId =
+          containerData['containerId']?.toString() ??
+              (containerData['name'] as String?)?.split('/').last;
+      _gtmPublicId = containerData['publicId']?.toString();
+      _setStep(2, StepStatus.done);
+
+      // ── 단계 4: GA4 속성 생성
+      _setStep(3, StepStatus.running);
+      final ga4AccountsData = await _apiGet(
+          'https://analyticsadmin.googleapis.com/v1beta/accounts');
+      final ga4Accounts =
+          (ga4AccountsData['accounts'] as List? ?? []);
+      if (ga4Accounts.isEmpty) {
+        _setStep(3, StepStatus.error,
+            err: 'GA4 계정이 없습니다. analytics.google.com 에서 계정을 먼저 생성해주세요.');
+        setState(() => _hasError = true);
+        return;
+      }
+      final ga4AccountName =
+          ga4Accounts[0]['name']?.toString() ?? '';
+      final ga4AccountId = ga4AccountName.split('/').last;
+
+      final propertyData = await _apiPost(
+        'https://analyticsadmin.googleapis.com/v1beta/properties',
+        {
+          'displayName': widget.setupData.projectName,
+          'timeZone': 'Asia/Seoul',
+          'currencyCode': 'KRW',
+          'industryCategory': 'SHOPPING',
+          'parent': 'accounts/$ga4AccountId',
+        },
+      );
+      _ga4PropertyId = propertyData['name']?.toString();
+      _setStep(3, StepStatus.done);
+
+      // ── 단계 5: GA4 웹 데이터 스트림 생성
+      _setStep(4, StepStatus.running);
+      final streamData = await _apiPost(
+        'https://analyticsadmin.googleapis.com/v1beta/$_ga4PropertyId/dataStreams',
+        {
+          'type': 'WEB_DATA_STREAM',
+          'displayName': widget.setupData.websiteUrl,
+          'webStreamData': {
+            'defaultUri': widget.setupData.websiteUrl,
+          },
+        },
+      );
+      _measurementId = streamData['webStreamData']?['measurementId']
+              ?.toString() ??
+          streamData['measurementId']?.toString();
+      _setStep(4, StepStatus.done);
+
+      // ── 단계 6: GTM 워크스페이스 조회 + 태그/트리거 생성
+      _setStep(5, StepStatus.running);
+      final wsData = await _apiGet(
+        'https://www.googleapis.com/tagmanager/v2'
+        '/accounts/$_gtmAccountId/containers/$_gtmContainerId/workspaces',
+      );
+      final workspaces = (wsData['workspace'] as List? ?? []);
+      if (workspaces.isEmpty) {
+        _setStep(5, StepStatus.error,
+            err: 'GTM 워크스페이스를 찾을 수 없습니다.');
+        setState(() => _hasError = true);
+        return;
+      }
+      _workspaceId = workspaces[0]['workspaceId']?.toString() ??
+          (workspaces[0]['name'] as String?)?.split('/').last;
+
+      final wsBase =
+          'https://www.googleapis.com/tagmanager/v2/accounts/$_gtmAccountId'
+          '/containers/$_gtmContainerId/workspaces/$_workspaceId';
+
+      // 트리거 생성
+      final triggerData = await _apiPost(
+        '$wsBase/triggers',
+        {'name': 'All Pages', 'type': 'PAGEVIEW'},
+      );
+      final triggerId = triggerData['triggerId']?.toString() ??
+          (triggerData['name'] as String?)?.split('/').last ??
+          '';
+
+      // 태그 생성 (GA4 Configuration)
+      await _apiPost(
+        '$wsBase/tags',
+        {
+          'name': 'GA4 - Configuration',
+          'type': 'googtag',
+          'parameter': [
+            {
+              'type': 'TEMPLATE',
+              'key': 'tagId',
+              'value': _measurementId ?? '',
+            }
+          ],
+          'firingTriggerId': [triggerId],
+        },
+      );
+      _setStep(5, StepStatus.done);
+
+      // ── 단계 7: GTM 버전 생성 + 퍼블리시
+      _setStep(6, StepStatus.running);
+      final versionData = await _apiPost(
+        '$wsBase:create_version',
+        {'name': 'v1 - 자동 세팅', 'notes': 'GA4 자동 연동'},
+      );
+      _gtmVersionId = versionData['containerVersion']?['containerVersionId']
+              ?.toString() ??
+          versionData['containerVersionId']?.toString();
+
+      await _apiPost(
+        'https://www.googleapis.com/tagmanager/v2'
+        '/accounts/$_gtmAccountId/containers/$_gtmContainerId'
+        '/versions/$_gtmVersionId:publish',
+        {},
+      );
+      _setStep(6, StepStatus.done);
+
+      // ── 단계 8: 완료
+      _setStep(7, StepStatus.done);
+      setState(() => _finished = true);
+
+      // CompletePage로 이동
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CompletePage(
+            setupData: widget.setupData,
+            gtmPublicId: _gtmPublicId ?? 'GTM-XXXXXX',
+            measurementId: _measurementId ?? 'G-XXXXXXXXXX',
+          ),
+        ),
+      );
+    } catch (e) {
+      // 현재 running 상태인 단계를 error로
+      for (int i = 0; i < _steps.length; i++) {
+        if (_steps[i].status == StepStatus.running) {
+          _setStep(i, StepStatus.error, err: e.toString());
+          break;
+        }
+      }
+      setState(() => _hasError = true);
+    }
+  }
+
+  void _retry() {
+    // 상태 초기화 후 재시도
+    setState(() {
+      for (final s in _steps) {
+        s.status = StepStatus.waiting;
+        s.errorMessage = null;
+      }
+      _hasError = false;
+      _finished = false;
+      _gtmAccountId = null;
+      _gtmContainerId = null;
+      _gtmPublicId = null;
+      _ga4PropertyId = null;
+      _measurementId = null;
+      _workspaceId = null;
+      _gtmVersionId = null;
+    });
+    _runAll();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: _AppBar(title: '자동 세팅 진행 중', step: '4/5'),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            _StepHeader(
+              icon: Icons.autorenew,
+              title: 'GTM + GA4 자동 세팅 중',
+              subtitle: '각 단계를 순서대로 처리하고 있습니다. 잠시 기다려주세요.',
+            ),
+            const SizedBox(height: 24),
+
+            _AppCard(
+              child: Column(
+                children: List.generate(_steps.length, (i) {
+                  return _ProgressStepTile(
+                    step: _steps[i],
+                    isLast: i == _steps.length - 1,
+                  );
+                }),
+              ),
+            ),
+
+            if (_hasError) ...[
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _retry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('다시 시도',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kError,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_user!.displayName ?? '',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text(_user!.email,
-                          style: const TextStyle(color: Color(0xFF64748B), fontSize: 13)),
-                    ],
-                  )),
-                  TextButton(onPressed: _copyToken,
-                      child: const Text('토큰 복사')),
-                ]),
-              ),
-              const SizedBox(height: 16),
-
-              // GTM 결과
-              _ResultSection(
-                title: 'GTM 계정',
-                icon: Icons.local_offer,
-                color: const Color(0xFF2563EB),
-                items: _gtmAccounts,
-                nameKey: 'name',
-                emptyMsg: 'GTM 계정 없음 (API 권한 확인 필요)',
-              ),
-              const SizedBox(height: 16),
-
-              // GA4 결과
-              _ResultSection(
-                title: 'GA4 계정',
-                icon: Icons.bar_chart,
-                color: const Color(0xFF16A34A),
-                items: _ga4Properties,
-                nameKey: 'displayName',
-                emptyMsg: 'GA4 계정 없음 (신규 생성 가능)',
-              ),
-              const SizedBox(height: 16),
-
-              // 결과 요약
-              _Card(
-                color: const Color(0xFFDCFCE7),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('✓ 기능 체크 결과',
-                        style: TextStyle(fontWeight: FontWeight.bold,
-                            color: Color(0xFF15803D))),
-                    const SizedBox(height: 8),
-                    _ResultItem('Google OAuth', true),
-                    _ResultItem('GTM API 접근', _gtmAccounts.isNotEmpty || _token != null),
-                    _ResultItem('GA4 API 접근', _token != null),
-                    _ResultItem('서비스 구현 가능 여부', true),
-                  ],
                 ),
-              ),
-
-              const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: _signOut,
-                child: const Text('로그아웃'),
               ),
             ],
           ],
@@ -285,109 +858,545 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _Card extends StatelessWidget {
-  final Widget child;
-  final Color color;
-  const _Card({required this.child,
-      this.color = Colors.white});
+// 단계 타일 위젯
+class _ProgressStepTile extends StatelessWidget {
+  final ProgressStep step;
+  final bool isLast;
+
+  const _ProgressStepTile({required this.step, this.isLast = false});
+
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(12),
-      boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.06),
-          blurRadius: 8, offset: const Offset(0, 2))],
-    ),
-    child: child,
-  );
+  Widget build(BuildContext context) {
+    Widget icon;
+    switch (step.status) {
+      case StepStatus.waiting:
+        icon = Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFFCBD5E1), width: 2),
+          ),
+        );
+        break;
+      case StepStatus.running:
+        icon = const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2.5, color: kPrimary),
+        );
+        break;
+      case StepStatus.done:
+        icon = const Icon(Icons.check_circle, color: kSuccess, size: 24);
+        break;
+      case StepStatus.error:
+        icon = const Icon(Icons.cancel, color: kError, size: 24);
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              icon,
+              if (!isLast)
+                Container(
+                  width: 2,
+                  height: 24,
+                  color: const Color(0xFFE2E8F0),
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                ),
+            ],
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    step.label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: step.status == StepStatus.done
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                      color: step.status == StepStatus.waiting
+                          ? const Color(0xFF94A3B8)
+                          : step.status == StepStatus.error
+                              ? kError
+                              : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  if (step.errorMessage != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      step.errorMessage!,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: kError),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _CheckItem extends StatelessWidget {
-  final String label;
-  const _CheckItem(this.label);
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(children: [
-      const Icon(Icons.check_circle_outline,
-          color: Color(0xFF2563EB), size: 18),
-      const SizedBox(width: 8),
-      Text(label),
-    ]),
-  );
-}
+// ════════════════════════════════════════════
+// 5. CompletePage
+// ════════════════════════════════════════════
+class CompletePage extends StatelessWidget {
+  final SetupData setupData;
+  final String gtmPublicId;
+  final String measurementId;
 
-class _ResultItem extends StatelessWidget {
-  final String label;
-  final bool ok;
-  const _ResultItem(this.label, this.ok);
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(children: [
-      Icon(ok ? Icons.check_circle : Icons.cancel,
-          color: ok ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-          size: 16),
-      const SizedBox(width: 6),
-      Text(label, style: const TextStyle(fontSize: 13)),
-    ]),
-  );
-}
-
-class _ResultSection extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color color;
-  final List<Map<String, dynamic>> items;
-  final String nameKey;
-  final String emptyMsg;
-
-  const _ResultSection({
-    required this.title, required this.icon, required this.color,
-    required this.items, required this.nameKey, required this.emptyMsg,
+  const CompletePage({
+    super.key,
+    required this.setupData,
+    required this.gtmPublicId,
+    required this.measurementId,
   });
 
+  String get _gtmHeadSnippet => '''<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','$gtmPublicId');</script>
+<!-- End Google Tag Manager -->''';
+
+  String get _gtmBodySnippet => '''<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=$gtmPublicId"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->''';
+
+  void _copy(BuildContext ctx, String text, String label) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(content: Text('$label 복사됨'), duration: const Duration(seconds: 2)),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) => _Card(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 6),
-          Text(title, style: TextStyle(
-              fontWeight: FontWeight.bold, color: color)),
-          const SizedBox(width: 8),
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: _AppBar(title: '세팅 완료', step: '5/5'),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 완료 헤더
+            Center(
+              child: Column(
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: kSuccess.withOpacity(0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.check_circle,
+                        color: kSuccess, size: 44),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'GTM+GA4 세팅 완료!',
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B)),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${setupData.projectName} 프로젝트의 GTM 컨테이너와\nGA4 속성이 성공적으로 생성·연동되었습니다.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 14, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // GA4 측정 ID
+            _SectionTitle('GA4 측정 ID'),
+            const SizedBox(height: 8),
+            _AppCard(
+              child: Row(
+                children: [
+                  const Icon(Icons.bar_chart, color: kSuccess),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      measurementId,
+                      style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: kSuccess),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 20),
+                    onPressed: () =>
+                        _copy(context, measurementId, 'GA4 측정 ID'),
+                    tooltip: '복사',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // GTM Head 코드
+            _SectionTitle('GTM 코드 — <head> 태그 안에 삽입'),
+            const SizedBox(height: 8),
+            _CodeCard(
+              code: _gtmHeadSnippet,
+              onCopy: () => _copy(context, _gtmHeadSnippet, 'GTM head 코드'),
+            ),
+            const SizedBox(height: 16),
+
+            // GTM Body 코드
+            _SectionTitle('GTM 코드 — <body> 태그 바로 다음에 삽입'),
+            const SizedBox(height: 8),
+            _CodeCard(
+              code: _gtmBodySnippet,
+              onCopy: () => _copy(context, _gtmBodySnippet, 'GTM body 코드'),
+            ),
+            const SizedBox(height: 20),
+
+            // 안내 문구
+            _AppCard(
+              color: const Color(0xFFF0FDF4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline, color: kSuccess, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          '설치 안내',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: kSuccess,
+                              fontSize: 14),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          '1. 위 GTM head 코드를 웹사이트 <head> 태그 안(가능한 상단)에 붙여넣으세요.\n'
+                          '2. GTM body 코드를 <body> 태그 바로 다음에 붙여넣으세요.\n'
+                          '3. 저장 후 사이트를 새로고침하면 GA4 데이터 수집이 시작됩니다.',
+                          style: TextStyle(fontSize: 13, height: 1.6),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // GTM 컨테이너 ID 표시
+            Center(
+              child: Text(
+                'GTM 컨테이너 ID: $gtmPublicId',
+                style: const TextStyle(
+                    color: Color(0xFF94A3B8), fontSize: 13),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// 코드 카드
+class _CodeCard extends StatelessWidget {
+  final String code;
+  final VoidCallback onCopy;
+
+  const _CodeCard({required this.code, required this.onCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: onCopy,
+                  icon: const Icon(Icons.copy, size: 16, color: Colors.white70),
+                  label: const Text('복사',
+                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: SelectableText(
+              code,
+              style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: Color(0xFF94D2BD),
+                  height: 1.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════
+// 공통 위젯
+// ════════════════════════════════════════════
+
+class _AppBar extends StatelessWidget implements PreferredSizeWidget {
+  final String title;
+  final String step;
+
+  const _AppBar({required this.title, required this.step});
+
+  @override
+  Size get preferredSize => const Size.fromHeight(56);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      backgroundColor: kPrimary,
+      foregroundColor: Colors.white,
+      title: Text(title,
+          style: const TextStyle(fontWeight: FontWeight.bold)),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: Center(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(step,
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AppCard extends StatelessWidget {
+  final Widget child;
+  final Color color;
+
+  const _AppCard({required this.child, this.color = Colors.white});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: child,
+      );
+}
+
+class _StepHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _StepHeader(
+      {required this.icon, required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: kPrimary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: kPrimary, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B))),
+                const SizedBox(height: 4),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontSize: 13, color: Color(0xFF64748B))),
+              ],
+            ),
+          ),
+        ],
+      );
+}
+
+class _FieldLabel extends StatelessWidget {
+  final String label;
+  final bool required;
+
+  const _FieldLabel(this.label, {this.required = false});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600, fontSize: 14)),
+            if (required)
+              const Text(' *',
+                  style: TextStyle(color: kError, fontSize: 14)),
+          ],
+        ),
+      );
+}
+
+InputDecoration _inputDeco({required String hint, required IconData icon}) =>
+    InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(icon),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: kPrimary, width: 2),
+      ),
+    );
+
+class _PermItem extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String desc;
+
+  const _PermItem(
+      {required this.icon,
+      required this.color,
+      required this.title,
+      required this.desc});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Text('${items.length}개',
-                style: TextStyle(fontSize: 12, color: color,
-                    fontWeight: FontWeight.bold)),
+            child: Icon(icon, color: color, size: 18),
           ),
-        ]),
-        const SizedBox(height: 10),
-        if (items.isEmpty)
-          Text(emptyMsg,
-              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13))
-        else
-          ...items.map((item) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(children: [
-              const Icon(Icons.circle, size: 6, color: Color(0xFF94A3B8)),
-              const SizedBox(width: 8),
-              Expanded(child: Text(
-                item[nameKey]?.toString().split('/').last ?? item.toString(),
-                style: const TextStyle(fontSize: 13),
-              )),
-            ]),
-          )),
-      ],
-    ),
-  );
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 13)),
+                Text(desc,
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF64748B))),
+              ],
+            ),
+          ),
+        ],
+      );
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoRow(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 72,
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 13, color: Color(0xFF64748B))),
+            ),
+            Expanded(
+              child: Text(value,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w500)),
+            ),
+          ],
+        ),
+      );
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+
+  const _SectionTitle(this.title);
+
+  @override
+  Widget build(BuildContext context) => Text(
+        title,
+        style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF374151)),
+      );
 }
