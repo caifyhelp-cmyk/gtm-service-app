@@ -12,7 +12,7 @@ void main() {
 }
 
 // ── 앱 버전 (pubspec.yaml의 version과 동일하게 유지)
-const _appVersion = '1.0.1';
+const _appVersion = '1.1.0';
 const _githubRepo = 'caifyhelp-cmyk/gtm-service-app';
 
 // ── 컬러 상수
@@ -946,12 +946,12 @@ class _ProgressPageState extends State<ProgressPage> {
       _setStep(7, StepStatus.done);
       setState(() => _finished = true);
 
-      // CompletePage로 이동
+      // VerifyPage (설치 확인) → CompletePage
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => CompletePage(
+          builder: (_) => VerifyPage(
             setupData: widget.setupData,
             gtmPublicId: _gtmPublicId ?? 'GTM-XXXXXX',
             measurementId: _measurementId ?? 'G-XXXXXXXXXX',
@@ -1138,7 +1138,269 @@ class _ProgressStepTile extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════
-// 5. CompletePage
+// 5. VerifyPage (설치 확인)
+// ════════════════════════════════════════════
+class VerifyPage extends StatefulWidget {
+  final SetupData setupData;
+  final String gtmPublicId;
+  final String measurementId;
+
+  const VerifyPage({
+    super.key,
+    required this.setupData,
+    required this.gtmPublicId,
+    required this.measurementId,
+  });
+
+  @override
+  State<VerifyPage> createState() => _VerifyPageState();
+}
+
+class _VerifyPageState extends State<VerifyPage> {
+  bool _codeInserted = false;
+  bool _ga4Confirmed = false;
+
+  void _copyUrl(String url) {
+    Clipboard.setData(ClipboardData(text: url));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('URL 복사됨 — 브라우저에 붙여넣기하세요'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _goComplete() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CompletePage(
+          setupData: widget.setupData,
+          gtmPublicId: widget.gtmPublicId,
+          measurementId: widget.measurementId,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: _AppBar(title: '설치 확인', step: '5/6'),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 안내 헤더
+            Center(
+              child: Column(
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: kPrimary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.fact_check_outlined,
+                        color: kPrimary, size: 36),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'GTM 코드를 홈페이지에 삽입하고\n아래 항목을 확인해 주세요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // 확인 체크리스트
+            const _SectionTitle('설치 확인 체크리스트'),
+            const SizedBox(height: 8),
+            _AppCard(
+              child: Column(
+                children: [
+                  _CheckRow(
+                    label: 'GTM 코드를 홈페이지 head/body에 삽입했습니다',
+                    value: _codeInserted,
+                    onChanged: (v) =>
+                        setState(() => _codeInserted = v ?? false),
+                  ),
+                  const SizedBox(height: 4),
+                  _CheckRow(
+                    label: 'GA4 실시간 보고서에서 방문 데이터를 확인했습니다',
+                    value: _ga4Confirmed,
+                    onChanged: (v) =>
+                        setState(() => _ga4Confirmed = v ?? false),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // 확인 링크
+            const _SectionTitle('확인 도구 링크'),
+            const SizedBox(height: 8),
+            _AppCard(
+              child: Column(
+                children: [
+                  _VerifyLinkRow(
+                    icon: Icons.preview_outlined,
+                    color: kPrimary,
+                    title: 'GTM 미리보기 모드',
+                    desc: 'Tag Assistant로 설치 여부 즉시 확인',
+                    url: 'https://tagmanager.google.com',
+                    onCopy: _copyUrl,
+                  ),
+                  const Divider(height: 20, thickness: 0.5),
+                  _VerifyLinkRow(
+                    icon: Icons.bar_chart_outlined,
+                    color: kSuccess,
+                    title: 'GA4 실시간 보고서',
+                    desc: '사이트 방문 시 실시간으로 데이터 확인',
+                    url: 'https://analytics.google.com',
+                    onCopy: _copyUrl,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // GTM/GA4 ID 확인
+            const _SectionTitle('설치 코드 정보'),
+            const SizedBox(height: 8),
+            _AppCard(
+              child: Column(
+                children: [
+                  _InfoRow('GTM ID', widget.gtmPublicId),
+                  _InfoRow('GA4 ID', widget.measurementId),
+                  _InfoRow('프로젝트', widget.setupData.projectName),
+                  _InfoRow('플랫폼', widget.setupData.platform),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // 완료 버튼
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: (_codeInserted && _ga4Confirmed) ? _goComplete : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kSuccess,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFCBD5E1),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('설치 완료 확인',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: TextButton(
+                onPressed: _goComplete,
+                child: const Text('건너뛰기',
+                    style: TextStyle(color: Color(0xFF94A3B8))),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CheckRow extends StatelessWidget {
+  final String label;
+  final bool value;
+  final void Function(bool?) onChanged;
+
+  const _CheckRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Checkbox(
+            value: value,
+            onChanged: onChanged,
+            activeColor: kSuccess,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(fontSize: 13)),
+          ),
+        ],
+      );
+}
+
+class _VerifyLinkRow extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String desc;
+  final String url;
+  final void Function(String) onCopy;
+
+  const _VerifyLinkRow({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.desc,
+    required this.url,
+    required this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(desc,
+                    style: const TextStyle(
+                        fontSize: 11, color: Color(0xFF64748B))),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy_outlined,
+                size: 18, color: Color(0xFF94A3B8)),
+            onPressed: () => onCopy(url),
+            tooltip: 'URL 복사',
+          ),
+        ],
+      );
+}
+
+// ════════════════════════════════════════════
+// 6. CompletePage
 // ════════════════════════════════════════════
 class CompletePage extends StatelessWidget {
   final SetupData setupData;
@@ -1225,6 +1487,81 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     }
   }
 
+  // 플랫폼별 폼 제출 dataLayer 코드
+  String get _formCode {
+    const pushCode = "window.dataLayer = window.dataLayer || [];\n"
+        "dataLayer.push({\n"
+        "  'event': 'form_submit',\n"
+        "  'event_category': '폼제출',\n"
+        "  'event_label': document.title\n"
+        "});";
+
+    switch (setupData.platform) {
+      case '카페24':
+      case '고도몰':
+        return '<!-- 폼 제출 시 dataLayer 이벤트 (form의 onsubmit에 추가) -->\n'
+            '<form onsubmit="$pushCode">\n'
+            '  <!-- 폼 필드 -->\n'
+            '</form>';
+      case '워드프레스':
+        return '<!-- WordPress: functions.php 또는 커스텀 JS -->\n'
+            'jQuery(document).ready(function(\$) {\n'
+            '  \$("form").on("submit", function() {\n'
+            '    $pushCode\n'
+            '  });\n'
+            '});';
+      default:
+        return '// 폼 제출 이벤트\n'
+            'document.querySelectorAll("form")\n'
+            '  .forEach(f => f.addEventListener("submit", () => {\n'
+            '    $pushCode\n'
+            '  }));';
+    }
+  }
+
+  // 플랫폼별 구매 완료 dataLayer 코드
+  String get _purchaseCode {
+    switch (setupData.platform) {
+      case '카페24':
+        return '<!-- 카페24: 주문완료 페이지(/order/order_result.html)에 삽입 -->\n'
+            'window.dataLayer = window.dataLayer || [];\n'
+            'dataLayer.push({\n'
+            "  'event': 'purchase',\n"
+            "  'event_category': '구매완료',\n"
+            "  'transaction_id': '{주문번호}',\n"
+            "  'value': {결제금액},\n"
+            "  'currency': 'KRW'\n"
+            '});';
+      case '고도몰':
+        return '<!-- 고도몰: 주문완료 페이지(order/order_result.php)에 삽입 -->\n'
+            'window.dataLayer = window.dataLayer || [];\n'
+            'dataLayer.push({\n'
+            "  'event': 'purchase',\n"
+            "  'event_category': '구매완료',\n"
+            "  'transaction_id': '{주문번호}',\n"
+            "  'value': {결제금액},\n"
+            "  'currency': 'KRW'\n"
+            '});';
+      case '워드프레스':
+        return '<!-- WooCommerce: functions.php에 추가 (thankyou 페이지) -->\n'
+            'add_action("woocommerce_thankyou", function(\$order_id) {\n'
+            '  \$order = wc_get_order(\$order_id);\n'
+            "  echo \"<script>dataLayer.push({'event':'purchase',\"\n"
+            "       . \"'value':\" . \$order->get_total() . \",'currency':'KRW'});</script>\";\n"
+            '});';
+      default:
+        return '// 구매 완료 페이지에서 실행\n'
+            'window.dataLayer = window.dataLayer || [];\n'
+            'dataLayer.push({\n'
+            "  'event': 'purchase',\n"
+            "  'event_category': '구매완료',\n"
+            "  'transaction_id': '주문번호_변수',\n"
+            "  'value': 결제금액_변수,\n"
+            "  'currency': 'KRW'\n"
+            '});';
+    }
+  }
+
   void _copy(BuildContext ctx, String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(ctx).showSnackBar(
@@ -1236,7 +1573,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBg,
-      appBar: _AppBar(title: '세팅 완료', step: '5/5'),
+      appBar: _AppBar(title: '세팅 완료', step: '6/6'),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -1351,6 +1688,24 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             _CodeCard(
               code: _dataLayerCode,
               onCopy: () => _copy(context, _dataLayerCode, '전화번호 클릭 코드'),
+            ),
+            const SizedBox(height: 20),
+
+            // 폼 제출 dataLayer 코드
+            _SectionTitle('폼 제출 추적 코드 (${setupData.platform})'),
+            const SizedBox(height: 8),
+            _CodeCard(
+              code: _formCode,
+              onCopy: () => _copy(context, _formCode, '폼 제출 코드'),
+            ),
+            const SizedBox(height: 20),
+
+            // 구매 완료 dataLayer 코드
+            _SectionTitle('구매 완료 추적 코드 (${setupData.platform})'),
+            const SizedBox(height: 8),
+            _CodeCard(
+              code: _purchaseCode,
+              onCopy: () => _copy(context, _purchaseCode, '구매 완료 코드'),
             ),
             const SizedBox(height: 32),
 
