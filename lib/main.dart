@@ -35,7 +35,7 @@ const _requiredScopes = [
 ];
 
 // ── API 서버 주소
-const _apiBase = 'http://13.209.119.56';
+const _apiBase = 'http://13.209.119.56:8000';
 
 // ── 로컬 폴백 코드 (서버 다운 시)
 const _fallbackCodes = ['CAIFY-TEST'];
