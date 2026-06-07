@@ -16,10 +16,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.22.2'
           channel: 'stable'
+          cache: true
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
 
       - name: Create google-services.json
         run: |
@@ -40,20 +47,12 @@ jobs:
                 },
                 "oauth_client": [
                   {
-                    "client_id": "000000000000-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com",
+                    "client_id": "000000000000-placeholder.apps.googleusercontent.com",
                     "client_type": 3
                   }
                 ],
-                "api_key": [
-                  {
-                    "current_key": "placeholder"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
+                "api_key": [{"current_key": "placeholder"}],
+                "services": {"appinvite_service": {"other_platform_oauth_client": []}}
               }
             ],
             "configuration_version": "1"
@@ -64,25 +63,23 @@ jobs:
         run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --debug
+        run: flutter build apk --debug --no-shrink
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gtm-service-app-debug
+          name: gtm-service-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Create Release
+      - name: Create/Update Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: "GTM Service Test APK"
+          name: "GTM Service Test APK (debug)"
           body: |
-            GTM + GA4 OAuth 기능 테스트용 안드로이드 앱
+            GTM + GA4 OAuth 기능 테스트용 안드로이드 앱 (debug 빌드)
 
-            **주의**: 로그인하려면 Google Cloud Console에서 OAuth 클라이언트 설정 필요
-            - 패키지명: com.caify.gtmservice
-            - debug 키스토어 SHA-1을 Google Cloud Console에 등록하세요
+            **설치 방법**: apk 파일 다운로드 → 안드로이드에서 설치 (알 수 없는 소스 허용)
           files: build/app/outputs/flutter-apk/app-debug.apk
           make_latest: true
         env:
