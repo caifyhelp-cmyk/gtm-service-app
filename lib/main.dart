@@ -48,7 +48,7 @@ class SetupData {
     this.serviceCode = '',
     this.websiteUrl = '',
     this.projectName = '',
-    this.platform = '스마트스토어',
+    this.platform = '카페24',
   });
 }
 
@@ -398,9 +398,9 @@ class _SetupFormPageState extends State<SetupFormPage> {
   final _urlCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  String _platform = '스마트스토어';
+  String _platform = '카페24';
 
-  final _platforms = ['스마트스토어', '쇼핑몰', '블로그', '기타'];
+  final _platforms = ['카페24', '고도몰', '워드프레스', '직접개발'];
 
   void _next() {
     if (_formKey.currentState!.validate()) {
@@ -1165,6 +1165,66 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <!-- End Google Tag Manager (noscript) -->''';
 
+  // 플랫폼별 설치 위치 안내
+  Map<String, String> get _installGuide => {
+    '카페24': '카페24 관리자 → 디자인 → HTML 편집\n'
+        '• [헤더 코드] head 태그 닫기(<\/head>) 바로 위에 GTM head 코드 삽입\n'
+        '• [바디 코드] body 태그 열기(<body>) 바로 아래에 GTM body 코드 삽입\n'
+        '저장 후 사이트에서 F12 → Elements에서 GTM 스크립트 확인',
+    '고도몰': '고도몰 관리자 → 디자인 → PC 화면설정 → 레이아웃 관리\n'
+        '• [헤더 코드] 공통 헤더 HTML에서 </head> 바로 위에 삽입\n'
+        '• [바디 코드] 공통 헤더 HTML의 <body> 바로 다음 줄에 삽입\n'
+        '저장 후 미리보기로 반영 확인',
+    '워드프레스': '방법 1 (플러그인): Insert Headers and Footers 설치\n'
+        '• Settings → Insert Headers and Footers\n'
+        '• Header 영역: GTM head 코드 붙여넣기\n'
+        '• Body 영역: GTM body 코드 붙여넣기\n\n'
+        '방법 2 (직접): 외모 → 테마 편집기 → header.php\n'
+        '• </head> 위에 GTM head 코드, <body> 아래에 GTM body 코드 삽입',
+    '직접개발': '모든 페이지의 HTML에 아래 코드를 삽입하세요.\n'
+        '• GTM head 코드 → <head> 태그 내부 최상단\n'
+        '• GTM body 코드 → <body> 태그 바로 다음\n'
+        'SPA(React/Vue)는 index.html 또는 _document.js에 삽입',
+  };
+
+  // 플랫폼별 전화번호 클릭 dataLayer 코드
+  String get _dataLayerCode {
+    const base = "window.dataLayer = window.dataLayer || [];\n"
+        "dataLayer.push({\n"
+        "  'event': 'tel_click',\n"
+        "  'event_category': '전화문의',\n"
+        "  'event_label': '전화번호클릭'\n"
+        "});";
+
+    switch (setupData.platform) {
+      case '카페24':
+        return '<!-- 카페24: 전화번호 링크(tel:)에 onclick 추가 -->\n'
+            '<a href="tel:010-0000-0000"\n'
+            '   onclick="$base">\n'
+            '  전화하기\n'
+            '</a>';
+      case '고도몰':
+        return '<!-- 고도몰: 전화번호 링크에 onclick 추가 -->\n'
+            '<a href="tel:010-0000-0000"\n'
+            '   onclick="$base">\n'
+            '  전화하기\n'
+            '</a>';
+      case '워드프레스':
+        return '<!-- WordPress: functions.php 또는 커스텀 JS 파일에 추가 -->\n'
+            'jQuery(document).ready(function(\$) {\n'
+            '  \$("a[href^=\'tel:\']").on("click", function() {\n'
+            '    $base\n'
+            '  });\n'
+            '});';
+      default:
+        return '// 전화번호 링크 클릭 이벤트\n'
+            'document.querySelectorAll("a[href^=\'tel:\']")\n'
+            '  .forEach(el => el.addEventListener("click", () => {\n'
+            '    $base\n'
+            '  }));';
+    }
+  }
+
   void _copy(BuildContext ctx, String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(ctx).showSnackBar(
@@ -1263,7 +1323,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             ),
             const SizedBox(height: 20),
 
-            // 안내 문구
+            // 플랫폼별 설치 위치 안내
+            _SectionTitle('${setupData.platform} 설치 위치 안내'),
+            const SizedBox(height: 8),
             _AppCard(
               color: const Color(0xFFF0FDF4),
               child: Row(
@@ -1272,28 +1334,23 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
                   const Icon(Icons.info_outline, color: kSuccess, size: 20),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          '설치 안내',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: kSuccess,
-                              fontSize: 14),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          '1. 위 GTM head 코드를 웹사이트 <head> 태그 안(가능한 상단)에 붙여넣으세요.\n'
-                          '2. GTM body 코드를 <body> 태그 바로 다음에 붙여넣으세요.\n'
-                          '3. 저장 후 사이트를 새로고침하면 GA4 데이터 수집이 시작됩니다.',
-                          style: TextStyle(fontSize: 13, height: 1.6),
-                        ),
-                      ],
+                    child: Text(
+                      _installGuide[setupData.platform] ??
+                          '위 GTM 코드를 <head>와 <body> 태그에 각각 삽입하세요.',
+                      style: const TextStyle(fontSize: 13, height: 1.6),
                     ),
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 20),
+
+            // 전화번호 클릭 dataLayer 코드
+            _SectionTitle('전화번호 클릭 추적 코드 (${setupData.platform})'),
+            const SizedBox(height: 8),
+            _CodeCard(
+              code: _dataLayerCode,
+              onCopy: () => _copy(context, _dataLayerCode, '전화번호 클릭 코드'),
             ),
             const SizedBox(height: 32),
 
