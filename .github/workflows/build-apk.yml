@@ -65,25 +65,36 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
+      - name: Get app version
+        id: get_version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Build APK
         run: flutter build apk --debug --no-shrink
+
+      - name: Rename APK with version
+        run: |
+          cp build/app/outputs/flutter-apk/app-debug.apk \
+             build/app/outputs/flutter-apk/gtm-service-v${{ steps.get_version.outputs.version }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gtm-service-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: gtm-service-v${{ steps.get_version.outputs.version }}
+          path: build/app/outputs/flutter-apk/gtm-service-v${{ steps.get_version.outputs.version }}.apk
 
       - name: Create/Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: apk-latest
-          name: "GTM Service Test APK (debug)"
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: "GTM Service v${{ steps.get_version.outputs.version }}"
           body: |
-            GTM + GA4 OAuth 기능 테스트용 안드로이드 앱 (debug 빌드)
+            GTM + GA4 자동 세팅 앱 v${{ steps.get_version.outputs.version }}
 
             **설치 방법**: apk 파일 다운로드 → 안드로이드에서 설치 (알 수 없는 소스 허용)
-          files: build/app/outputs/flutter-apk/app-debug.apk
+          files: build/app/outputs/flutter-apk/gtm-service-v${{ steps.get_version.outputs.version }}.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

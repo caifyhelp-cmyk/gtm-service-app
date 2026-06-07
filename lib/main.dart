@@ -1,12 +1,19 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
 
 void main() {
   runApp(const GTMServiceApp());
 }
+
+// ── 앱 버전 (pubspec.yaml의 version과 동일하게 유지)
+const _appVersion = '1.0.0';
+const _githubRepo = 'caifyhelp-cmyk/gtm-service-app';
 
 // ── 컬러 상수
 const kPrimary = Color(0xFF2563EB);
@@ -14,18 +21,18 @@ const kSuccess = Color(0xFF16A34A);
 const kError = Color(0xFFDC2626);
 const kBg = Color(0xFFF8FAFC);
 
-// ── GoogleSignIn 인스턴스
-final _googleSignIn = GoogleSignIn(
-  scopes: [
-    'email',
-    'https://www.googleapis.com/auth/tagmanager.readonly',
-    'https://www.googleapis.com/auth/tagmanager.edit.containers',
-    'https://www.googleapis.com/auth/tagmanager.publish',
-    'https://www.googleapis.com/auth/analytics.readonly',
-    'https://www.googleapis.com/auth/analytics.manage.users',
-    'https://www.googleapis.com/auth/analytics.edit',
-  ],
-);
+// ── GoogleSignIn 인스턴스 (기본 로그인용 — 민감 스코프는 requestScopes로 별도 요청)
+final _googleSignIn = GoogleSignIn(scopes: ['email']);
+
+// ── GTM + GA4 접근에 필요한 민감 스코프
+const _requiredScopes = [
+  'https://www.googleapis.com/auth/tagmanager.readonly',
+  'https://www.googleapis.com/auth/tagmanager.edit.containers',
+  'https://www.googleapis.com/auth/tagmanager.publish',
+  'https://www.googleapis.com/auth/analytics.readonly',
+  'https://www.googleapis.com/auth/analytics.manage.users',
+  'https://www.googleapis.com/auth/analytics.edit',
+];
 
 // ── 유효 서비스 코드 목록
 const _validCodes = ['CAIFY001', 'CAIFY002', 'CAIFY003', 'CAIFY-TEST'];
@@ -77,6 +84,164 @@ class GTMServiceApp extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════
+// 자동 업데이트
+// ════════════════════════════════════════════
+
+bool _isNewerVersion(String latest, String current) {
+  final l = latest.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+  final c = current.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+  for (int i = 0; i < 3; i++) {
+    final lv = i < l.length ? l[i] : 0;
+    final cv = i < c.length ? c[i] : 0;
+    if (lv > cv) return true;
+    if (lv < cv) return false;
+  }
+  return false;
+}
+
+Future<void> checkForUpdate(BuildContext context) async {
+  try {
+    final res = await http.get(
+      Uri.parse(
+          'https://api.github.com/repos/$_githubRepo/releases/latest'),
+      headers: {'Accept': 'application/vnd.github.v3+json'},
+    ).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) return;
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final tag = ((data['tag_name'] as String?) ?? '').replaceFirst('v', '');
+    if (!_isNewerVersion(tag, _appVersion)) return;
+
+    final assets = data['assets'] as List? ?? [];
+    final apkAsset = assets.cast<Map<String, dynamic>>().firstWhere(
+          (a) => (a['name'] as String).endsWith('.apk'),
+          orElse: () => {},
+        );
+    final downloadUrl = apkAsset['browser_download_url'] as String?;
+    if (downloadUrl == null || !context.mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _UpdateDialog(version: tag, downloadUrl: downloadUrl),
+    );
+  } catch (_) {}
+}
+
+class _UpdateDialog extends StatefulWidget {
+  final String version;
+  final String downloadUrl;
+  const _UpdateDialog({required this.version, required this.downloadUrl});
+
+  @override
+  State<_UpdateDialog> createState() => _UpdateDialogState();
+}
+
+class _UpdateDialogState extends State<_UpdateDialog> {
+  double? _progress;
+  bool _downloading = false;
+  String? _error;
+
+  Future<void> _download() async {
+    setState(() {
+      _downloading = true;
+      _error = null;
+      _progress = 0;
+    });
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/gtm-service-update.apk');
+
+      final req = http.Request('GET', Uri.parse(widget.downloadUrl));
+      final streamedRes = await req.send();
+      final total = streamedRes.contentLength ?? 0;
+      int received = 0;
+      final sink = file.openWrite();
+
+      await for (final chunk in streamedRes.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) {
+          setState(() => _progress = received / total);
+        }
+      }
+      await sink.close();
+      setState(() => _progress = 1.0);
+
+      await OpenFile.open(file.path);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() {
+        _error = '다운로드 실패: $e';
+        _downloading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Row(
+        children: [
+          Icon(Icons.system_update, color: kPrimary),
+          SizedBox(width: 10),
+          Text('업데이트 알림', style: TextStyle(fontSize: 17)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('새 버전 v${widget.version}이 출시되었습니다.\n지금 업데이트하시겠습니까?',
+              style: const TextStyle(fontSize: 14)),
+          if (_downloading) ...[
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: _progress,
+              backgroundColor: const Color(0xFFE2E8F0),
+              color: kPrimary,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _progress == null
+                  ? '준비 중...'
+                  : _progress! < 1.0
+                      ? '다운로드 중... ${(_progress! * 100).toStringAsFixed(0)}%'
+                      : '설치 파일 열기...',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
+          ],
+        ],
+      ),
+      actions: _downloading
+          ? null
+          : [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('나중에',
+                    style: TextStyle(color: Color(0xFF64748B))),
+              ),
+              ElevatedButton(
+                onPressed: _download,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Text('업데이트'),
+              ),
+            ],
+    );
+  }
+}
+
+// ════════════════════════════════════════════
 // 1. WelcomePage
 // ════════════════════════════════════════════
 class WelcomePage extends StatefulWidget {
@@ -90,6 +255,14 @@ class WelcomePage extends StatefulWidget {
 class _WelcomePageState extends State<WelcomePage> {
   final _codeCtrl = TextEditingController();
   String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      checkForUpdate(context);
+    });
+  }
 
   void _confirm() {
     final code = _codeCtrl.text.trim().toUpperCase();
@@ -372,6 +545,7 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
+      // 1단계: 계정 선택 팝업
       final account = await _googleSignIn.signIn();
       if (account == null) {
         setState(() {
@@ -380,6 +554,18 @@ class _LoginPageState extends State<LoginPage> {
         });
         return;
       }
+
+      // 2단계: GTM/GA4 권한 동의 팝업 (다른 앱처럼 별도 팝업으로 표시)
+      final granted = await _googleSignIn.requestScopes(_requiredScopes);
+      if (!granted) {
+        await _googleSignIn.signOut();
+        setState(() {
+          _loading = false;
+          _error = 'GTM/GA4 접근 권한이 필요합니다. 모든 권한을 허용해주세요.';
+        });
+        return;
+      }
+
       final auth = await account.authentication;
       final token = auth.accessToken;
       if (token == null) {
