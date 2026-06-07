@@ -34,8 +34,11 @@ const _requiredScopes = [
   'https://www.googleapis.com/auth/analytics.edit',
 ];
 
-// ── 유효 서비스 코드 목록
-const _validCodes = ['CAIFY001', 'CAIFY002', 'CAIFY003', 'CAIFY-TEST'];
+// ── API 서버 주소
+const _apiBase = 'http://13.209.119.56';
+
+// ── 로컬 폴백 코드 (서버 다운 시)
+const _fallbackCodes = ['CAIFY-TEST'];
 
 // ── 세팅 데이터 모델
 class SetupData {
@@ -255,6 +258,7 @@ class WelcomePage extends StatefulWidget {
 class _WelcomePageState extends State<WelcomePage> {
   final _codeCtrl = TextEditingController();
   String? _errorText;
+  bool _verifying = false;
 
   @override
   void initState() {
@@ -264,18 +268,52 @@ class _WelcomePageState extends State<WelcomePage> {
     });
   }
 
-  void _confirm() {
+  Future<void> _confirm() async {
     final code = _codeCtrl.text.trim().toUpperCase();
-    if (_validCodes.contains(code)) {
-      widget.setupData.serviceCode = code;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
+    if (code.isEmpty) {
+      setState(() => _errorText = '코드를 입력해주세요.');
+      return;
+    }
+    setState(() { _verifying = true; _errorText = null; });
+
+    try {
+      // 서버에서 코드 검증
+      final res = await http.post(
+        Uri.parse('$_apiBase/api/codes/verify'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'code': code}),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        widget.setupData.serviceCode = code;
+        if (!mounted) return;
+        Navigator.push(context, MaterialPageRoute(
           builder: (_) => SetupFormPage(setupData: widget.setupData),
-        ),
-      );
-    } else {
-      setState(() => _errorText = '유효하지 않은 코드입니다. 다시 확인해주세요.');
+        ));
+        return;
+      }
+
+      // 서버 오류 메시지 표시
+      String msg = '유효하지 않은 코드입니다.';
+      try {
+        msg = (jsonDecode(res.body) as Map)['detail'] ?? msg;
+      } catch (_) {}
+      setState(() => _errorText = msg);
+
+    } catch (_) {
+      // 서버 미응답 시 폴백 코드로 검증
+      if (_fallbackCodes.contains(code)) {
+        widget.setupData.serviceCode = code;
+        if (!mounted) return;
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => SetupFormPage(setupData: widget.setupData),
+        ));
+      } else {
+        setState(() => _errorText = '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.');
+      }
+    } finally {
+      if (mounted) setState(() => _verifying = false);
     }
   }
 
@@ -357,7 +395,7 @@ class _WelcomePageState extends State<WelcomePage> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _confirm,
+                          onPressed: _verifying ? null : _confirm,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: kPrimary,
                             foregroundColor: Colors.white,
@@ -365,10 +403,16 @@ class _WelcomePageState extends State<WelcomePage> {
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
                           ),
-                          child: const Text('확인',
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold)),
+                          child: _verifying
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                      color: Colors.white, strokeWidth: 2))
+                              : const Text('확인',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ],
@@ -942,9 +986,25 @@ class _ProgressPageState extends State<ProgressPage> {
       );
       _setStep(6, StepStatus.done);
 
-      // ── 단계 8: 완료
+      // ── 단계 8: 완료 + 서버에 세팅 완료 기록
       _setStep(7, StepStatus.done);
       setState(() => _finished = true);
+
+      try {
+        await http.post(
+          Uri.parse('$_apiBase/api/setup/complete'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'code': widget.setupData.serviceCode,
+            'customer_name': widget.setupData.projectName,
+            'website_url': widget.setupData.websiteUrl,
+            'project_name': widget.setupData.projectName,
+            'platform': widget.setupData.platform,
+            'gtm_id': _gtmPublicId,
+            'ga4_id': _measurementId,
+          }),
+        ).timeout(const Duration(seconds: 5));
+      } catch (_) {}
 
       // VerifyPage (설치 확인) → CompletePage
       if (!mounted) return;
