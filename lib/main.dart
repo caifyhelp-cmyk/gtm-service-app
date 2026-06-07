@@ -12,7 +12,7 @@ void main() {
 }
 
 // ── 앱 버전 (pubspec.yaml의 version과 동일하게 유지)
-const _appVersion = '1.0.0';
+const _appVersion = '1.0.1';
 const _githubRepo = 'caifyhelp-cmyk/gtm-service-app';
 
 // ── 컬러 상수
